@@ -30,7 +30,7 @@ class SteamTradeBot():
         """Инициализация полей класса"""
         self.__s = ''
         try:
-            with open('proxies.txt', encoding='utf-8') as file:
+            with open('./proxies.txt', encoding='utf-8') as file:
                 self.proxy_base = ''.join(file.readlines()).strip().split('\n')
         except FileNotFoundError:
             logger.error("Необходимо создать файл proxies.txt")
@@ -94,7 +94,7 @@ class SteamTradeBot():
         self.__password = config["password"]
 
         self.__bot = telebot.TeleBot(self.__tg_bot_token)
-        self.__bot.config["api_key"] = self.__tg_bot_token
+        # self.__bot.config["api_key"] = self.__tg_bot_token
 
         self.__tm_contenders = dict()
         self.__buff_contenders = dict()
@@ -170,21 +170,22 @@ class SteamTradeBot():
             for skin_name in skins:
                 buff = self.get_buff_sell_price_and_skin_id(skin_name)
                 if skin_name not in self.__buff_contenders.keys():
-                    steam = self.get_steam_auto_buy_price(skin_name) * 0.87
+                    steam = self.get_steam_auto_buy_price(skin_name)
                     self.__buff_contenders[skin_name] = steam
                 else:
                     steam = self.__buff_contenders[skin_name]
                 difference = steam / (buff['price'] * self.__rubles_per_yuan)
-                if difference > (100 + self.__percentage) / 100:
-                    self.__s = f"BUFF\n{skin_name}\n" + f"Steam price: {steam:.2f}₽\n" + \
-                        f"Buff price: {buff:.2f}¥ ({self.__rubles_per_yuan * buff['price']:.2f}₽)\n" + \
+                self.__s = f"BUFF\n{skin_name}\n" + f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
+                        f"Buff price: {buff['price']:.2f}¥ ({self.__rubles_per_yuan * buff['price']:.2f}₽)\n" + \
                         f"Difference is: +{difference:.2f}"
+                print(self.__s)
+                if difference > (100 + self.__percentage) / 100:                    
                     self.__bot.send_message(self.__tg_id, self.__s)
                     self.buff_buy(buff['skin_id'], buff['price'])
-                    self.__buff_contenders.pop(skin_name)
-                    self.__s = ''
+                    self.__buff_contenders.pop(skin_name)                    
                 else:
                     pass
+                self.__s = ''
 
     def start_tm(self):
         """Запуск бота для TM"""
@@ -194,7 +195,7 @@ class SteamTradeBot():
             for skin_name in skins:
                 tm = self.get_market_sell_price_and_market_item_id(skin_name)
                 if skin_name not in self.__tm_contenders.keys():
-                    steam = self.get_steam_auto_buy_price(skin_name) * 0.87
+                    steam = self.get_steam_auto_buy_price(skin_name)
                     self.__tm_contenders[skin_name] = steam
                 else:
                     steam = self.__tm_contenders[skin_name]
@@ -202,15 +203,17 @@ class SteamTradeBot():
                     tm_sell_id = tm[0]
                     tm_sell_price = tm[1]
                     difference = steam / (tm_sell_price / 100)
-                    if difference > (100 + self.__percentage) / 100:
-                        self.__s = f"{skin_name}\n" + f"Steam price: {steam:.2f}₽\n" + \
-                            f"TM price: {tm:.2f}¥ ({tm:.2f}₽)\n" + \
+                    self.__s = f"{skin_name}\n" + f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
+                            f"TM price: {tm_sell_price / 100:.2f}\n" + \
                             f"Difference is: +{difference:.2f}"
+                    print(self.__s)
+                    print('-' * 50) # вместо прочерков можно просто выводить logger.info там время есть
+                    if difference > (100 + self.__percentage) / 100:                    
                         if self.tm_buy(tm_sell_id, tm_sell_price):
                             self.__tm_contenders.pop(skin_name)
                             self.__s = "TM\n" + self.__s
                             self.__bot.send_message(self.__tg_id, self.__s)
-                            self.__s = ''
+                    self.__s = ''
 
     def open_skinstable(self, market: str):
         """Открытие skins-table.xyz таблицы"""
@@ -345,6 +348,7 @@ class SteamTradeBot():
                 item_nameid = int(item_nameid)
                 break
             except:
+                # TODO: выводить прокси и информация о бане
                 continue
         r = requests.get(
             f'https://steamcommunity.com/'
