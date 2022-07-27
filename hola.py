@@ -99,7 +99,7 @@ class SteamTradeBot():
         self.__tm_contenders = dict()
         self.__buff_contenders = dict()
 
-        self.__secrets = load(open(f'./{self.__login}.json'))
+        self.__secrets = load(open(f'./{self.__login}.maFile'))
         self.__sa = SteamAuthenticator(self.__secrets)
 
         self.ua = UserAgent().random

@@ -129,7 +129,7 @@ dmypy.json
 .pyre/
 
 .vscode
-*.json
+*.maFile
 *cookies
 test*
 proxies.txt
