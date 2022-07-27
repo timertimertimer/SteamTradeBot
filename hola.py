@@ -35,27 +35,27 @@ class SteamTradeBot():
         except FileNotFoundError:
             logger.error("Необходимо создать файл proxies.txt")
             sys.exit(1)
-        self.__main_cookies = [{'domain': 'skins-table.xyz', # при смене площадок на завоз, меняются только площадки
+        self.__main_cookies = [{'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
                                 'name': 'per1_from',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '10.00'},
+                                'value': '5.00'},  # Сортировка минимальной разницы в процентах между площадками
                                {'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
                                 'name': 'first',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '175'},
+                                'value': '0'},  # Buff - 175, TM - 23
                                {'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
                                 'name': 'sc1',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '10'},
+                                'value': '10'},  # Минимальное кол-во продаж за неделю в Steam
                                {'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
@@ -69,21 +69,21 @@ class SteamTradeBot():
                                 'name': 'tm1',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '10'},
+                                'value': '10'},  # Минимальное кол-во продаж за неделю на TM
                                {'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
                                 'name': 'price1_from',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '1.00'},
+                                'value': '1.00'},  # Минимальная цена в долларах
                                {'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
                                 'name': 'second',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '53'}]
+                                'value': '53'}]  # Steam(AUTO) - 53
         self.__percentage = percentage
 
         config = dotenv_values('.env')
@@ -121,12 +121,13 @@ class SteamTradeBot():
                 self.__browser.add_cookie(cookie)
             self.__browser.refresh()
             try:
-                self.__wait.until(EC.element_to_be_clickable((By.XPATH, '//span[@class="pulldown global_action_link persona_name_text_content"]')))
+                self.__wait.until(EC.element_to_be_clickable(
+                    (By.XPATH, '//span[@class="pulldown global_action_link persona_name_text_content"]')))
             except:
                 raise FileNotFoundError
         except FileNotFoundError:
             self.create_steam_cookies()
-        
+
         self.__session = requests.session()
         try:
             for cookie in pickle.load(open('./buff_cookies', 'rb')):
@@ -161,38 +162,67 @@ class SteamTradeBot():
             pickle.dump(self.__browser.get_cookies(),
                         open('./buff_cookies', 'wb'))
 
-    def start(self) -> None:  # TODO: Ну че, собрать все осталось, асинки, мультипроцессинг, вся хуйня
-        pass
-
     def start_buff(self):
         """Запуск бота для Buff163"""
-        self.open_skinstable()
+        self.open_skinstable("buff")
         while True:
             skins = self.get_skins()
             for skin_name in skins:
-                buff = self.get_buff_sell_price_and_skin_id(skin_name)["price"]
-                if (skin_name not in self.__buff_contenders.keys()):
+                buff = self.get_buff_sell_price_and_skin_id(skin_name)
+                if skin_name not in self.__buff_contenders.keys():
                     steam = self.get_steam_auto_buy_price(skin_name) * 0.87
                     self.__buff_contenders[skin_name] = steam
                 else:
                     steam = self.__buff_contenders[skin_name]
-                difference = steam / (buff * self.__rubles_per_yuan)
-                if (difference > (100 + self.__percentage) / 100):
-                    self.__s = f"{skin_name}\n" + f"Steam price: {steam:.2f}₽\n" + \
-                        f"Buff price: {buff:.2f}¥ ({self.__rubles_per_yuan * buff:.2f}₽)\n" + \
+                difference = steam / (buff['price'] * self.__rubles_per_yuan)
+                if difference > (100 + self.__percentage) / 100:
+                    self.__s = f"BUFF\n{skin_name}\n" + f"Steam price: {steam:.2f}₽\n" + \
+                        f"Buff price: {buff:.2f}¥ ({self.__rubles_per_yuan * buff['price']:.2f}₽)\n" + \
                         f"Difference is: +{difference:.2f}"
                     self.__bot.send_message(self.__tg_id, self.__s)
+                    self.buff_buy(buff['skin_id'], buff['price'])
                     self.__buff_contenders.pop(skin_name)
                     self.__s = ''
                 else:
                     pass
 
-    def open_skinstable(self):
+    def start_tm(self):
+        """Запуск бота для TM"""
+        self.open_skinstable('tm')
+        while True:
+            skins = self.get_skins()
+            for skin_name in skins:
+                tm = self.get_market_sell_price_and_market_item_id(skin_name)
+                if skin_name not in self.__tm_contenders.keys():
+                    steam = self.get_steam_auto_buy_price(skin_name) * 0.87
+                    self.__tm_contenders[skin_name] = steam
+                else:
+                    steam = self.__tm_contenders[skin_name]
+                if tm is not None and tm[0]:
+                    tm_sell_id = tm[0]
+                    tm_sell_price = tm[1]
+                    difference = steam / (tm_sell_price / 100)
+                    if difference > (100 + self.__percentage) / 100:
+                        self.__s = f"{skin_name}\n" + f"Steam price: {steam:.2f}₽\n" + \
+                            f"TM price: {tm:.2f}¥ ({tm:.2f}₽)\n" + \
+                            f"Difference is: +{difference:.2f}"
+                        if self.tm_buy(tm_sell_id, tm_sell_price):
+                            self.__tm_contenders.pop(skin_name)
+                            self.__s = "TM\n" + self.__s
+                            self.__bot.send_message(self.__tg_id, self.__s)
+                            self.__s = ''
+
+    def open_skinstable(self, market: str):
         """Открытие skins-table.xyz таблицы"""
         self.__browser.get("https://steamcommunity.com/openid/login?openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.mode=checkid_setup&openid.return_to=https%3A%2F%2Fskins-table.xyz%2Fsteam%2F%3Flogin&openid.realm=https%3A%2F%2Fskins-table.xyz&openid.ns.sreg=http%3A%2F%2Fopenid.net%2Fextensions%2Fsreg%2F1.1&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select")
         self.__wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//input[@class='btn_green_white_innerfade']"))).click()
         for el in self.__main_cookies:
+            if el['name'] == 'first':
+                if market == "tm":
+                    el["value"] = "23"
+                if market == "buff":
+                    el['value'] = "175"
             self.__browser.add_cookie(el)
         self.__browser.get("https://skins-table.xyz/table/")
 
@@ -302,12 +332,12 @@ class SteamTradeBot():
         """Получение цены ордера на автопокупку в стиме"""
         url = f'https://steamcommunity.com/market/listings/{730}/' + skin_name
         while True:
-            #proxy = choice(self.proxy_base)
-            #proxies = {
-            #    'http': f'http://{proxy}',
-            #    'https': f'http://{proxy}'
-            #}
-            skin_page = requests.get(url)
+            proxy = choice(self.proxy_base)
+            proxies = {
+                'http': f'http://{proxy}',
+                'https': f'http://{proxy}'
+            }
+            skin_page = requests.get(url, proxies=proxies)
             soup = BeautifulSoup(skin_page.text, 'html.parser')
             last_script = str(soup.find_all('script')[-1])
             item_nameid = last_script.split('(')[-1].split(');')[0]
@@ -357,3 +387,14 @@ class SteamTradeBot():
                 skin = el
                 break
         return {"skin_id": skin['id'], "price": float(skin['sell_min_price'])}
+
+if __name__ == "__main__":
+    logger.info("CTRL+C для остановки бота или закрыть консоль")
+    market = int(input("1 - tm to steam, 2 - buff to steam:"))
+    perc = int(input("Процент завоза:"))
+    if market == 1:
+        stb = SteamTradeBot(percentage=perc)
+        stb.start_tm()
+    elif market == 2:
+        stb = SteamTradeBot(percentage=perc)
+        stb.start_buff()
