@@ -11,6 +11,7 @@ from random import choice
 from json import load
 from steam.guard import SteamAuthenticator
 from fake_useragent import UserAgent
+from ctypes import windll
 import requests
 import time
 import telebot
@@ -21,7 +22,7 @@ import sys
 logger.remove()
 logger.add(
     sys.stderr, format="<white>{time:HH:mm:ss}</white> | <level>{level: <8}</level> | <cyan>{line}</cyan> - <white>{message}</white>")
-
+windll.kernel32.SetConsoleTitleW('SteamTradeBot | by timer')
 
 class SteamTradeBot():
     """Класс для запуска бота"""
@@ -76,7 +77,7 @@ class SteamTradeBot():
                                 'name': 'price1_from',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '1.00'},  # Минимальная цена в долларах
+                                'value': '3.00'},  # Минимальная цена в долларах
                                {'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
@@ -102,18 +103,12 @@ class SteamTradeBot():
         self.__secrets = load(open(f'./{self.__login}.maFile'))
         self.__sa = SteamAuthenticator(self.__secrets)
 
-        self.ua = UserAgent().random
-
-        response = requests.get("https://www.cbr-xml-daily.ru/daily_json.js")
-        self.__rubles_per_yuan = response.json()["Valute"]["CNY"]["Value"] / 10
-        logger.info("1 rub = " + str(self.__rubles_per_yuan) + " yuan")
-
         chromedriver_autoinstaller.install()
         options = webdriver.ChromeOptions()
         options.add_experimental_option('excludeSwitches', ['enable-logging'])
         self.__browser = webdriver.Chrome(options=options)
         self.__browser.maximize_window()
-        self.__wait = WebDriverWait(self.__browser, 10)
+        self.__wait = WebDriverWait(self.__browser, 60)
         self.__browser.get("https://steamcommunity.com/")
         self.__browser.delete_all_cookies()
         try:
@@ -127,20 +122,6 @@ class SteamTradeBot():
                 raise FileNotFoundError
         except FileNotFoundError:
             self.create_steam_cookies()
-
-        self.__session = requests.session()
-        try:
-            for cookie in pickle.load(open('./buff_cookies', 'rb')):
-                self.__session.cookies.set(cookie["name"], cookie["value"])
-            info = "https://buff.163.com/account/api/user/info"
-            payload = {'_': str(time.time()).split('.')[0]}
-            response = self.__session.get(info, json=payload)
-            if response.json()['code'] != "OK":
-                raise FileNotFoundError
-        except FileNotFoundError:
-            self.create_buff_cookies()
-            for cookie in pickle.load(open('./buff_cookies', 'rb')):
-                self.__session.cookies.set(cookie["name"], cookie["value"])
 
     def create_steam_cookies(self): # TODO: авторизация steam через requests
         self.__browser.get("https://steamcommunity.com/login")
@@ -164,6 +145,24 @@ class SteamTradeBot():
 
     def start_buff(self):
         """Запуск бота для Buff163"""
+        response = requests.get("https://www.cbr-xml-daily.ru/daily_json.js")
+        self.__rubles_per_yuan = response.json()["Valute"]["CNY"]["Value"] / 10
+        logger.info("1 rub = " + str(self.__rubles_per_yuan) + " yuan")
+
+        self.__session = requests.session()
+        try:
+            for cookie in pickle.load(open('./buff_cookies', 'rb')):
+                self.__session.cookies.set(cookie["name"], cookie["value"])
+            info = "https://buff.163.com/account/api/user/info"
+            payload = {'_': str(time.time()).split('.')[0]}
+            response = self.__session.get(info, json=payload)
+            if response.json()['code'] != "OK":
+                raise FileNotFoundError
+        except FileNotFoundError:
+            self.create_buff_cookies()
+            for cookie in pickle.load(open('./buff_cookies', 'rb')):
+                self.__session.cookies.set(cookie["name"], cookie["value"])
+
         self.open_skinstable("buff")
         while True:
             skins = self.get_skins()
@@ -174,11 +173,12 @@ class SteamTradeBot():
                     self.__buff_contenders[skin_name] = steam
                 else:
                     steam = self.__buff_contenders[skin_name]
-                difference = steam / (buff['price'] * self.__rubles_per_yuan)
+                difference = (steam * 0.87) / (buff['price'] * self.__rubles_per_yuan)
                 self.__s = f"BUFF\n{skin_name}\n" + f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
                         f"Buff price: {buff['price']:.2f}¥ ({self.__rubles_per_yuan * buff['price']:.2f}₽)\n" + \
                         f"Difference is: +{difference:.2f}"
                 print(self.__s)
+                logger.debug("")
                 if difference > (100 + self.__percentage) / 100:                    
                     self.__bot.send_message(self.__tg_id, self.__s)
                     self.buff_buy(buff['skin_id'], buff['price'])
@@ -202,12 +202,12 @@ class SteamTradeBot():
                 if tm is not None and tm[0]:
                     tm_sell_id = tm[0]
                     tm_sell_price = tm[1]
-                    difference = steam / (tm_sell_price / 100)
+                    difference = (steam * 0.87) / (tm_sell_price / 100)
                     self.__s = f"{skin_name}\n" + f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
                             f"TM price: {tm_sell_price / 100:.2f}\n" + \
                             f"Difference is: +{difference:.2f}"
                     print(self.__s)
-                    print('-' * 50) # вместо прочерков можно просто выводить logger.info там время есть
+                    logger.debug("")
                     if difference > (100 + self.__percentage) / 100:                    
                         if self.tm_buy(tm_sell_id, tm_sell_price):
                             self.__tm_contenders.pop(skin_name)
@@ -348,7 +348,7 @@ class SteamTradeBot():
                 item_nameid = int(item_nameid)
                 break
             except:
-                # TODO: выводить прокси и информация о бане
+                logger.info(f"Rate limit on {proxy.split('@')[1]}")
                 continue
         r = requests.get(
             f'https://steamcommunity.com/'
