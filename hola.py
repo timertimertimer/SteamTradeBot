@@ -5,6 +5,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from requests.exceptions import ProxyError
 from bs4 import BeautifulSoup
 from dotenv import dotenv_values
 from random import choice
@@ -49,7 +50,7 @@ class SteamTradeBot():
                                 'name': 'first',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '0'},  # Buff - 175, TM - 23
+                                'value': '0'},  # Buff - 158, TM - 23
                                {'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
@@ -102,6 +103,7 @@ class SteamTradeBot():
 
         self.__secrets = load(open(f'./{self.__login}.maFile'))
         self.__sa = SteamAuthenticator(self.__secrets)
+        self.__ua = UserAgent().random
 
         chromedriver_autoinstaller.install()
         options = webdriver.ChromeOptions()
@@ -125,12 +127,17 @@ class SteamTradeBot():
 
     def create_steam_cookies(self): # TODO: авторизация steam через requests
         self.__browser.get("https://steamcommunity.com/login")
+        time.sleep(1)
         self.__wait.until(EC.element_to_be_clickable(
             ((By.NAME, "username")))).send_keys(self.__login)
+        time.sleep(1)
         self.__browser.find_element(
             By.NAME, "password").send_keys(self.__password + Keys.ENTER)
+        time.sleep(3)
         self.__wait.until(EC.element_to_be_clickable(
-            (By.ID, "twofactorcode_entry"))).send_keys(self.__sa.get_code() + Keys.ENTER)
+            (By.ID, "twofactorcode_entry"))).send_keys(self.__sa.get_code())
+        self.__browser.find_element(By.ID, "twofactorcode_entry").send_keys(Keys.ENTER)
+        time.sleep(1)
         if self.__wait.until(EC.presence_of_element_located((By.XPATH, '//a[@class="menuitem supernav username persona_name_text_content"]'))):
             pickle.dump(self.__browser.get_cookies(),
                         open("./steam_cookies", "wb"))
@@ -196,9 +203,14 @@ class SteamTradeBot():
                 tm = self.get_market_sell_price_and_market_item_id(skin_name)
                 if skin_name not in self.__tm_contenders.keys():
                     steam = self.get_steam_auto_buy_price(skin_name)
-                    self.__tm_contenders[skin_name] = steam
-                else:
-                    steam = self.__tm_contenders[skin_name]
+                    self.__tm_contenders[skin_name] = [steam, 0]
+                else:                
+                    self.__tm_contenders[skin_name][1] += 1
+                    if self.__tm_contenders[skin_name][1] == 10:
+                        steam = self.get_steam_auto_buy_price(skin_name)
+                        self.__tm_contenders[skin_name] = [steam, 0]
+                    else:
+                        steam = self.__tm_contenders[skin_name][0]
                 if tm is not None and tm[0]:
                     tm_sell_id = tm[0]
                     tm_sell_price = tm[1]
@@ -225,7 +237,7 @@ class SteamTradeBot():
                 if market == "tm":
                     el["value"] = "23"
                 if market == "buff":
-                    el['value'] = "175"
+                    el['value'] = "158"
             self.__browser.add_cookie(el)
         self.__browser.get("https://skins-table.xyz/table/")
 
@@ -301,9 +313,9 @@ class SteamTradeBot():
             return {"sell_order_id": result['data']['items'][0]['id'], "price": result['data']['items'][0]['price']}
 
         current_order = get_current_order(skin_id, self.__session)
-        if current_order["price"] > price:
+        if float(current_order["price"]) > price:
             self.__bot.send_message(self.__tg_id, self.__s)
-        elif current_order["price"] / price > 1.05:
+        elif float(current_order["price"]) / price > 1.05:
             return
         # BUY
         buy = 'https://buff.163.com/api/market/goods/buy'
@@ -319,6 +331,9 @@ class SteamTradeBot():
         }
         response = self.__session.post(
             buy, json=payload, headers=post_headers(self.__session, skin_id, payload))
+        if response.json()['code'] is not "OK":
+            print(response.json())
+            return
         bill_order = response.json()['data']['id']
 
         # ASK_SELLER_TO_SEND_OFFER
@@ -340,9 +355,20 @@ class SteamTradeBot():
                 'http': f'http://{proxy}',
                 'https': f'http://{proxy}'
             }
-            skin_page = requests.get(url, proxies=proxies)
+            try:
+                skin_page = requests.get(url, proxies=proxies)
+            except ProxyError:
+                logger.info(f"Proxy {proxy.split('@')[1]} is banned")
+                self.__bot.send_message(self.__tg_id, f"Proxy {proxy.split('@')[1]} is banned")
+                continue
             soup = BeautifulSoup(skin_page.text, 'html.parser')
-            last_script = str(soup.find_all('script')[-1])
+            try:
+                last_script = str(soup.find_all('script')[-1])
+            except IndexError as e:
+                logger.error(e)
+                self.__bot.send_message(self.__tg_id, e)
+                open("index.html", 'w').write(skin_page.text)
+                continue
             item_nameid = last_script.split('(')[-1].split(');')[0]
             try:
                 item_nameid = int(item_nameid)
