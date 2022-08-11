@@ -15,8 +15,7 @@ try:
             'https://market.csgo.com/api/v2/trades/?key=' + tm_api_key)
         print(response.json())
         if response.json()['success']:
-            trade_id = response.json()["trades"]['trade_id']
-            bot.send_message(tg_id, "Confirm trade: " + str(trade_id))
+            bot.send_message(tg_id, "Confirm trades" )
             sleep(100)
         else:
             sleep(5)
