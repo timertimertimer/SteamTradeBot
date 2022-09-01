@@ -25,6 +25,7 @@ logger.add(
     sys.stderr, format="<white>{time:HH:mm:ss}</white> | <level>{level: <8}</level> | <cyan>{line}</cyan> - <white>{message}</white>")
 windll.kernel32.SetConsoleTitleW('SteamTradeBot | by timer')
 
+
 class SteamTradeBot():
     """Класс для запуска бота"""
 
@@ -125,7 +126,7 @@ class SteamTradeBot():
         except FileNotFoundError:
             self.create_steam_cookies()
 
-    def create_steam_cookies(self): # TODO: авторизация steam через requests
+    def create_steam_cookies(self):  # TODO: авторизация steam через requests
         self.__browser.get("https://steamcommunity.com/login")
         time.sleep(1)
         self.__wait.until(EC.element_to_be_clickable(
@@ -136,7 +137,8 @@ class SteamTradeBot():
         time.sleep(3)
         self.__wait.until(EC.element_to_be_clickable(
             (By.ID, "twofactorcode_entry"))).send_keys(self.__sa.get_code())
-        self.__browser.find_element(By.ID, "twofactorcode_entry").send_keys(Keys.ENTER)
+        self.__browser.find_element(
+            By.ID, "twofactorcode_entry").send_keys(Keys.ENTER)
         time.sleep(1)
         if self.__wait.until(EC.presence_of_element_located((By.XPATH, '//a[@class="menuitem supernav username persona_name_text_content"]'))):
             pickle.dump(self.__browser.get_cookies(),
@@ -180,16 +182,17 @@ class SteamTradeBot():
                     self.__buff_contenders[skin_name] = steam
                 else:
                     steam = self.__buff_contenders[skin_name]
-                difference = (steam * 0.87) / (buff['price'] * self.__rubles_per_yuan)
+                difference = (steam * 0.87) / \
+                    (buff['price'] * self.__rubles_per_yuan)
                 self.__s = f"BUFF\n{skin_name}\n" + f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
-                        f"Buff price: {buff['price']:.2f}¥ ({self.__rubles_per_yuan * buff['price']:.2f}₽)\n" + \
-                        f"Difference is: +{difference:.2f}"
+                    f"Buff price: {buff['price']:.2f}¥ ({self.__rubles_per_yuan * buff['price']:.2f}₽)\n" + \
+                    f"Difference is: +{difference:.2f}"
                 print(self.__s)
                 logger.debug("")
-                if difference > (100 + self.__percentage) / 100:                    
+                if difference > (100 + self.__percentage) / 100:
                     self.__bot.send_message(self.__tg_id, self.__s)
                     self.buff_buy(buff['skin_id'], buff['price'])
-                    self.__buff_contenders.pop(skin_name)                    
+                    self.__buff_contenders.pop(skin_name)
                 else:
                     pass
                 self.__s = ''
@@ -204,7 +207,7 @@ class SteamTradeBot():
                 if skin_name not in self.__tm_contenders.keys():
                     steam = self.get_steam_auto_buy_price(skin_name)
                     self.__tm_contenders[skin_name] = [steam, 0]
-                else:                
+                else:
                     self.__tm_contenders[skin_name][1] += 1
                     if self.__tm_contenders[skin_name][1] == 10:
                         steam = self.get_steam_auto_buy_price(skin_name)
@@ -216,11 +219,11 @@ class SteamTradeBot():
                     tm_sell_price = tm[1]
                     difference = (steam * 0.87) / (tm_sell_price / 100)
                     self.__s = f"{skin_name}\n" + f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
-                            f"TM price: {tm_sell_price / 100:.2f}\n" + \
-                            f"Difference is: +{difference:.2f}"
+                        f"TM price: {tm_sell_price / 100:.2f}\n" + \
+                        f"Difference is: +{difference:.2f}"
                     print(self.__s)
                     logger.debug("")
-                    if difference > (100 + self.__percentage) / 100:                    
+                    if difference > (100 + self.__percentage) / 100:
                         if self.tm_buy(tm_sell_id, tm_sell_price):
                             self.__tm_contenders.pop(skin_name)
                             self.__s = "TM\n" + self.__s
@@ -359,7 +362,8 @@ class SteamTradeBot():
                 skin_page = requests.get(url, proxies=proxies)
             except ProxyError:
                 logger.info(f"Proxy {proxy.split('@')[1]} is banned")
-                self.__bot.send_message(self.__tg_id, f"Proxy {proxy.split('@')[1]} is banned")
+                self.__bot.send_message(
+                    self.__tg_id, f"Proxy {proxy.split('@')[1]} is banned")
                 continue
             soup = BeautifulSoup(skin_page.text, 'html.parser')
             try:
@@ -417,6 +421,7 @@ class SteamTradeBot():
                 skin = el
                 break
         return {"skin_id": skin['id'], "price": float(skin['sell_min_price'])}
+
 
 if __name__ == "__main__":
     logger.info("CTRL+C для остановки бота или закрыть консоль")
