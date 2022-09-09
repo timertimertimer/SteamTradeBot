@@ -1,4 +1,13 @@
+"""Класс SteamTradeBot"""
 from pprint import pprint
+from random import choice
+from json import load
+from ctypes import windll
+import time
+import sys
+import pickle
+import requests
+import telebot
 from loguru import logger
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -8,25 +17,18 @@ from selenium.webdriver.support import expected_conditions as EC
 from requests.exceptions import ProxyError
 from bs4 import BeautifulSoup
 from dotenv import dotenv_values
-from random import choice
-from json import load
-from steam.guard import SteamAuthenticator
 from fake_useragent import UserAgent
-from ctypes import windll
-import requests
-import time
-import telebot
-import pickle
 import chromedriver_autoinstaller
-import sys
+from steam.guard import SteamAuthenticator
 
 logger.remove()
 logger.add(
-    sys.stderr, format="<white>{time:HH:mm:ss}</white> | <level>{level: <8}</level> | <cyan>{line}</cyan> - <white>{message}</white>")
+    sys.stderr, format="<white>{time:HH:mm:ss}</white> | <level>{level: <8}</level> |'\
+        ' <cyan>{line}</cyan> - <white>{message}</white>")
 windll.kernel32.SetConsoleTitleW('SteamTradeBot | by timer')
 
 
-class SteamTradeBot():
+class SteamTradeBot():  # FIXME: Add dataclasses
     """Класс для запуска бота"""
 
     def __init__(self, percentage=25):
@@ -44,7 +46,8 @@ class SteamTradeBot():
                                 'name': 'per1_from',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '5.00'},  # Сортировка минимальной разницы в процентах между площадками
+                                # Сортировка минимальной разницы в процентах между площадками
+                                'value': '5.00'},
                                {'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
@@ -99,12 +102,15 @@ class SteamTradeBot():
         self.__bot = telebot.TeleBot(self.__tg_bot_token)
         # self.__bot.config["api_key"] = self.__tg_bot_token
 
-        self.__tm_contenders = dict()
-        self.__buff_contenders = dict()
+        self.__tm_contenders = {}
+        self.__buff_contenders = {}
 
-        self.__secrets = load(open(f'./{self.__login}.maFile'))
+        self.__secrets = load(
+            open(f'./{self.__login}.maFile', encoding='utf-8'))
         self.__sa = SteamAuthenticator(self.__secrets)
         self.__ua = UserAgent().random
+
+        self.__session = requests.session()
 
         chromedriver_autoinstaller.install()
         options = webdriver.ChromeOptions()
@@ -120,13 +126,15 @@ class SteamTradeBot():
             self.__browser.refresh()
             try:
                 self.__wait.until(EC.element_to_be_clickable(
-                    (By.XPATH, '//span[@class="pulldown global_action_link persona_name_text_content"]')))
+                    (By.XPATH,
+                     '//span[@class="pulldown global_action_link persona_name_text_content"]')))
             except:
                 raise FileNotFoundError
         except FileNotFoundError:
             self.create_steam_cookies()
 
-    def create_steam_cookies(self):  # TODO: авторизация steam через requests
+    def create_steam_cookies(self):
+        """Создание steam куки"""
         self.__browser.get("https://steamcommunity.com/login")
         time.sleep(1)
         self.__wait.until(EC.element_to_be_clickable(
@@ -140,12 +148,15 @@ class SteamTradeBot():
         self.__browser.find_element(
             By.ID, "twofactorcode_entry").send_keys(Keys.ENTER)
         time.sleep(1)
-        if self.__wait.until(EC.presence_of_element_located((By.XPATH, '//a[@class="menuitem supernav username persona_name_text_content"]'))):
+        if self.__wait.until(EC.presence_of_element_located(
+                (By.XPATH, '//a[@class="menuitem supernav username persona_name_text_content"]'))):
             pickle.dump(self.__browser.get_cookies(),
                         open("./steam_cookies", "wb"))
 
     def create_buff_cookies(self):
-        self.__browser.get("https://steamcommunity.com/openid/login?openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.realm=https%3A%2F%2Fbuff.163.com%2F&openid.sreg.required=nickname%2Cemail%2Cfullname&openid.assoc_handle=None&openid.return_to=https%3A%2F%2Fbuff.163.com%2Faccount%2Flogin%2Fsteam%2Fverification%3Fback_url%3D%252Faccount%252Fsteam_bind%252Ffinish&openid.ns.sreg=http%3A%2F%2Fopenid.net%2Fextensions%2Fsreg%2F1.1&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select")
+        """Создание buff куки"""
+        with open("./steam_buff_login_link.txt.txt", encoding='utf-8') as file:
+            self.__browser.get(file.read().strip())
         self.__wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//input[@class='btn_green_white_innerfade']"))).click()
         if self.__wait.until(EC.url_to_be("https://buff.163.com/account/steam_bind/finish")):
@@ -154,16 +165,16 @@ class SteamTradeBot():
 
     def start_buff(self):
         """Запуск бота для Buff163"""
-        response = requests.get("https://www.cbr-xml-daily.ru/daily_json.js")
-        self.__rubles_per_yuan = response.json()["Valute"]["CNY"]["Value"] / 10
-        logger.info("1 rub = " + str(self.__rubles_per_yuan) + " yuan")
+        response = requests.get(
+            "https://www.cbr-xml-daily.ru/daily_json.js", timeout=10)
+        rubles_per_yuan = response.json()["Valute"]["CNY"]["Value"] / 10
+        logger.info("1 rub = " + str(rubles_per_yuan) + " yuan")
 
-        self.__session = requests.session()
         try:
             for cookie in pickle.load(open('./buff_cookies', 'rb')):
                 self.__session.cookies.set(cookie["name"], cookie["value"])
             info = "https://buff.163.com/account/api/user/info"
-            payload = {'_': str(time.time()).split('.')[0]}
+            payload = {'_': str(time.time()).split('.', maxsplit=1)[0]}
             response = self.__session.get(info, json=payload)
             if response.json()['code'] != "OK":
                 raise FileNotFoundError
@@ -177,15 +188,17 @@ class SteamTradeBot():
             skins = self.get_skins()
             for skin_name in skins:
                 buff = self.get_buff_sell_price_and_skin_id(skin_name)
-                if skin_name not in self.__buff_contenders.keys():
+                if skin_name not in self.__buff_contenders:
                     steam = self.get_steam_auto_buy_price(skin_name)
                     self.__buff_contenders[skin_name] = steam
                 else:
                     steam = self.__buff_contenders[skin_name]
                 difference = (steam * 0.87) / \
-                    (buff['price'] * self.__rubles_per_yuan)
-                self.__s = f"BUFF\n{skin_name}\n" + f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
-                    f"Buff price: {buff['price']:.2f}¥ ({self.__rubles_per_yuan * buff['price']:.2f}₽)\n" + \
+                    (buff['price'] * rubles_per_yuan)
+                self.__s = f"BUFF\n{skin_name}\n" + \
+                    f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
+                    f"Buff price: {buff['price']:.2f}¥" + \
+                    f" ({rubles_per_yuan * buff['price']:.2f}₽)\n" + \
                     f"Difference is: +{difference:.2f}"
                 print(self.__s)
                 logger.debug("")
@@ -203,8 +216,9 @@ class SteamTradeBot():
         while True:
             skins = self.get_skins()
             for skin_name in skins:
-                tm = self.get_market_sell_price_and_market_item_id(skin_name)
-                if skin_name not in self.__tm_contenders.keys():
+                tm_price_and_item_id = self.get_market_sell_price_and_market_item_id(
+                    skin_name)
+                if skin_name not in self.__tm_contenders:
                     steam = self.get_steam_auto_buy_price(skin_name)
                     self.__tm_contenders[skin_name] = [steam, 0]
                 else:
@@ -214,11 +228,12 @@ class SteamTradeBot():
                         self.__tm_contenders[skin_name] = [steam, 0]
                     else:
                         steam = self.__tm_contenders[skin_name][0]
-                if tm is not None and tm[0]:
-                    tm_sell_id = tm[0]
-                    tm_sell_price = tm[1]
+                if tm_price_and_item_id is not None and tm_price_and_item_id[0]:
+                    tm_sell_id = tm_price_and_item_id[0]
+                    tm_sell_price = tm_price_and_item_id[1]
                     difference = (steam * 0.87) / (tm_sell_price / 100)
-                    self.__s = f"{skin_name}\n" + f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
+                    self.__s = f"{skin_name}\n" + \
+                        f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
                         f"TM price: {tm_sell_price / 100:.2f}\n" + \
                         f"Difference is: +{difference:.2f}"
                     print(self.__s)
@@ -232,16 +247,17 @@ class SteamTradeBot():
 
     def open_skinstable(self, market: str):
         """Открытие skins-table.xyz таблицы"""
-        self.__browser.get("https://steamcommunity.com/openid/login?openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.mode=checkid_setup&openid.return_to=https%3A%2F%2Fskins-table.xyz%2Fsteam%2F%3Flogin&openid.realm=https%3A%2F%2Fskins-table.xyz&openid.ns.sreg=http%3A%2F%2Fopenid.net%2Fextensions%2Fsreg%2F1.1&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select")
+        with open("./steam_skinstable_login_link.txt", encoding='utf-8') as file:
+            self.__browser.get(file.read().strip)
         self.__wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//input[@class='btn_green_white_innerfade']"))).click()
-        for el in self.__main_cookies:
-            if el['name'] == 'first':
+        for cookie in self.__main_cookies:
+            if cookie['name'] == 'first':
                 if market == "tm":
-                    el["value"] = "23"
+                    cookie["value"] = "23"
                 if market == "buff":
-                    el['value'] = "158"
-            self.__browser.add_cookie(el)
+                    cookie['value'] = "158"
+            self.__browser.add_cookie(cookie)
         self.__browser.get("https://skins-table.xyz/table/")
 
     def get_skins(self) -> list:
@@ -255,30 +271,31 @@ class SteamTradeBot():
 
     def tm_buy(self, item_id: str, price: str, trade_link=None) -> None:
         """Покупка TM скинов"""
-        link = f'https://market.csgo.com/api/v2/buy?key=' + \
+        link = 'https://market.csgo.com/api/v2/buy?key=' + \
             self.__tm_api_key + '&id=' + \
             str(item_id) + '&price=' + str(price)
         if trade_link:
             link += trade_link
         logger.info(link)
-        r = requests.get(link)
-        res = r.json()
+        response = requests.get(link, timeout=10)
+        res = response.json()
         logger.info(res['success'])
         if res['success'] is False:
             logger.info(res['error'])
             return False
-        else:
-            return True
+        return True
 
     def buff_buy(self, skin_id: int, price: float) -> None:
         """Покупка Buff163 скинов"""
         def get_headers(session, skin_id):
-            """Headers'ы для GET запросов"""
+            """Header'ы для GET запросов"""
             headers = {
                 'accept': 'application/json, text/javascript, */*; q=0.01',
                 'accept-encoding': 'gzip, deflate, br',
                 'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-                'cookie': "; ".join([str(x)+"="+str(y) for x, y in session.cookies.get_dict().items()]),
+                'cookie':
+                    "; ".join([str(x)+"="+str(y)
+                              for x, y in session.cookies.get_dict().items()]),
                 'host': 'buff.163.com',
                 'referer': f'https://buff.163.com/goods/{skin_id}?from=market',
                 'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
@@ -308,12 +325,15 @@ class SteamTradeBot():
                 'page_num': 1,
                 'sort_by': 'price.asc',
                 'allow_tradable_cooldown:': 0,
-                '_': str(time.time()).split('.')[0]
+                '_': str(time.time()).split('.', maxsplit=1)[0]
             }
             response = session.get(
                 url, json=payload, headers=get_headers(session, skin_id))
             result = response.json()
-            return {"sell_order_id": result['data']['items'][0]['id'], "price": result['data']['items'][0]['price']}
+            return {
+                "sell_order_id": result['data']['items'][0]['id'],
+                "price": result['data']['items'][0]['price']
+            }
 
         current_order = get_current_order(skin_id, self.__session)
         if float(current_order["price"]) > price:
@@ -334,19 +354,25 @@ class SteamTradeBot():
         }
         response = self.__session.post(
             buy, json=payload, headers=post_headers(self.__session, skin_id, payload))
-        if response.json()['code'] is not "OK":
+        if response.json()['code'] != "OK":
             print(response.json())
             return
         bill_order = response.json()['data']['id']
 
         # ASK_SELLER_TO_SEND_OFFER
-        ask_seller_to_send_offer = 'https://buff.163.com/api/market/bill_order/ask_seller_to_send_offer'
+        ask_seller_to_send_offer = 'https://buff.163.com/api/market/bill_order/' + \
+            'ask_seller_to_send_offer'
         payload = {
             "bill_orders": [bill_order],
             "game": "csgo"
         }
         response = self.__session.post(ask_seller_to_send_offer,
-                                       json=payload, headers=post_headers(self.__session, skin_id, payload))
+                                       json=payload,
+                                       headers=post_headers(
+                                           self.__session,
+                                           skin_id,
+                                           payload
+                                       ))
         pprint(response.json())
 
     def get_steam_auto_buy_price(self, skin_name: str) -> float:
@@ -359,7 +385,7 @@ class SteamTradeBot():
                 'https': f'http://{proxy}'
             }
             try:
-                skin_page = requests.get(url, proxies=proxies)
+                skin_page = requests.get(url, proxies=proxies, timeout=10)
             except ProxyError:
                 logger.info(f"Proxy {proxy.split('@')[1]} is banned")
                 self.__bot.send_message(
@@ -368,31 +394,36 @@ class SteamTradeBot():
             soup = BeautifulSoup(skin_page.text, 'html.parser')
             try:
                 last_script = str(soup.find_all('script')[-1])
-            except IndexError as e:
-                logger.error(e)
-                self.__bot.send_message(self.__tg_id, e)
-                open("index.html", 'w').write(skin_page.text)
+            except IndexError as error:
+                logger.error(error)
+                self.__bot.send_message(self.__tg_id, error)
+                with open("index.html", 'w', encoding='utf-8') as file:
+                    file.write(skin_page.text)
                 continue
-            item_nameid = last_script.split('(')[-1].split(');')[0]
+            item_nameid = last_script.rsplit(
+                '(', maxsplit=1)[-1].split(');')[0]
             try:
                 item_nameid = int(item_nameid)
                 break
-            except:
+            except ValueError:
                 logger.info(f"Rate limit on {proxy.split('@')[1]}")
                 continue
-        r = requests.get(
-            f'https://steamcommunity.com/'
-            f'market/itemordershistogram?country=RU&language=english&currency=5&item_nameid={item_nameid}&two_factor=0')  # rate limit'а нет
-        price = int(r.text.split('"highest_buy_order":')
+        response = requests.get(
+            'https://steamcommunity.com/'
+            'market/itemordershistogram?'
+            'country=RU&language=english&currency=5'
+            f'&item_nameid={item_nameid}&two_factor=0', timeout=10)  # rate limit'а нет
+        price = int(response.text.split('"highest_buy_order":')
                     [1].split('\"')[1]) / 100
         return price
 
     def get_market_sell_price_and_market_item_id(self, skin_name: str) -> list | None:
         """Получение самой дешевой цены и item_id скина на TM'е"""
-        url = f'https://market.csgo.com/api/v2/search-item-by-hash-name-specific?key={self.__tm_api_key}&hash_name={skin_name}'
+        url = 'https://market.csgo.com/api/v2/'\
+            f'search-item-by-hash-name-specific?key={self.__tm_api_key}&hash_name={skin_name}'
         while True:
             try:
-                res = requests.get(url).json()
+                res = requests.get(url, timeout=10).json()
                 break
             except:
                 time.sleep(10)
@@ -403,33 +434,31 @@ class SteamTradeBot():
                 price = data['price']
                 # Возвращает id предмета и его цену
                 return [market_item_id, price]
-            else:
-                # Скинов нет
-                return None
-        else:
-            # Ошибка маркета
-            return [res['success'], res['error']]
+            # Скинов нет
+            return None
+        # Ошибка маркета
+        return [res['success'], res['error']]
 
     def get_buff_sell_price_and_skin_id(self, skin_name) -> dict:
         """Получение самой дешевой цены и skin_id скина на Buff163'е"""
         url = 'https://buff.163.com/api/market/goods?game=csgo&page_num=1&search=' + skin_name
         response = self.__session.get(url)
         result = response.json()
-        skin = dict()
-        for el in result['data']['items']:
-            if el['market_hash_name'] == skin_name:
-                skin = el
+        skin = {}
+        for item in result['data']['items']:
+            if item['market_hash_name'] == skin_name:
+                skin = item
                 break
         return {"skin_id": skin['id'], "price": float(skin['sell_min_price'])}
 
 
 if __name__ == "__main__":
     logger.info("CTRL+C для остановки бота или закрыть консоль")
-    market = int(input("1 - tm to steam, 2 - buff to steam:"))
+    current_market = int(input("1 - tm to steam, 2 - buff to steam:"))
     perc = int(input("Процент завоза:"))
-    if market == 1:
+    if current_market == 1:
         stb = SteamTradeBot(percentage=perc)
         stb.start_tm()
-    elif market == 2:
+    elif current_market == 2:
         stb = SteamTradeBot(percentage=perc)
         stb.start_buff()

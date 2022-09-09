@@ -1,7 +1,7 @@
-from distutils.command.config import config
+"""Вывод текущих трейдов в тг"""
+from time import sleep
 from dotenv import dotenv_values
 from requests import get
-from time import sleep
 import telebot
 
 config = dotenv_values('.env')
@@ -15,7 +15,7 @@ try:
             'https://market.csgo.com/api/v2/trades/?key=' + tm_api_key)
         print(response.json())
         if response.json()['success']:
-            bot.send_message(tg_id, "Confirm trades" )
+            bot.send_message(tg_id, "Confirm trades")
             sleep(100)
         else:
             sleep(5)
