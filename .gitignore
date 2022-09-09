@@ -132,4 +132,3 @@ dmypy.json
 *.maFile
 *cookies
 test*
-proxies.txt
