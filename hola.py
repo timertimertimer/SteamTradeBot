@@ -113,8 +113,8 @@ class SteamTradeBot():  # FIXME: Add dataclasses
             self.__ua = UserAgent().random
         except:
             with open("ua.txt", encoding="utf-8") as file:
-                ua = file.readlines()
-            print(re.sub("^\s+|\n|\r|\s+$", '', choice(ua)))
+                uas = file.readlines()
+            self.__ua = re.sub("^\s+|\n|\r|\s+$", '', choice(uas)))
 
         self.__session = requests.session()
 
