@@ -4,6 +4,7 @@ from random import choice
 from json import load
 from ctypes import windll
 import time
+import re
 import sys
 import pickle
 import requests
@@ -108,7 +109,12 @@ class SteamTradeBot():  # FIXME: Add dataclasses
         self.__secrets = load(
             open(f'./{self.__login}.maFile', encoding='utf-8'))
         self.__sa = SteamAuthenticator(self.__secrets)
-        self.__ua = UserAgent().random
+        try:
+            self.__ua = UserAgent().random
+        except:
+            with open("ua.txt", encoding="utf-8") as file:
+                ua = file.readlines()
+            print(re.sub("^\s+|\n|\r|\s+$", '', choice(ua)))
 
         self.__session = requests.session()
 
