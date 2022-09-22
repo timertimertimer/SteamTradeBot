@@ -29,7 +29,7 @@ logger.add(
 windll.kernel32.SetConsoleTitleW('SteamTradeBot | by timer')
 
 
-class SteamTradeBot():  # FIXME: Add dataclasses
+class SteamTradeBot:  # FIXME: Add dataclasses
     """Класс для запуска бота"""
 
     def __init__(self, percentage=25):
@@ -83,7 +83,7 @@ class SteamTradeBot():  # FIXME: Add dataclasses
                                 'name': 'price1_from',
                                 'path': '/table/',
                                 'secure': False,
-                                'value': '3.00'},  # Минимальная цена в долларах
+                                'value': '10.00'},  # Минимальная цена в долларах
                                {'domain': 'skins-table.xyz',
                                 'expiry': 253402300799,
                                 'httpOnly': False,
@@ -101,7 +101,6 @@ class SteamTradeBot():  # FIXME: Add dataclasses
         self.__password = config["password"]
 
         self.__bot = telebot.TeleBot(self.__tg_bot_token)
-        # self.__bot.config["api_key"] = self.__tg_bot_token
 
         self.__tm_contenders = {}
         self.__buff_contenders = {}
@@ -114,7 +113,7 @@ class SteamTradeBot():  # FIXME: Add dataclasses
         except:
             with open("ua.txt", encoding="utf-8") as file:
                 uas = file.readlines()
-            self.__ua = re.sub("^\s+|\n|\r|\s+$", '', choice(uas)))
+            self.__ua = re.sub("^\s+|\n|\r|\s+$", '', choice(uas))
 
         self.__session = requests.session()
 
@@ -123,7 +122,7 @@ class SteamTradeBot():  # FIXME: Add dataclasses
         options.add_experimental_option('excludeSwitches', ['enable-logging'])
         self.__browser = webdriver.Chrome(options=options)
         self.__browser.maximize_window()
-        self.__wait = WebDriverWait(self.__browser, 60)
+        self.__wait = WebDriverWait(self.__browser, 15)
         self.__browser.get("https://steamcommunity.com/")
         self.__browser.delete_all_cookies()
         try:
@@ -141,18 +140,17 @@ class SteamTradeBot():  # FIXME: Add dataclasses
 
     def create_steam_cookies(self):
         """Создание steam куки"""
-        self.__browser.get("https://steamcommunity.com/login")
+        self.__browser.get("https://steamcommunity.com/login/home/?goto=login")
         time.sleep(1)
         self.__wait.until(EC.element_to_be_clickable(
-            ((By.NAME, "username")))).send_keys(self.__login)
+            (By.XPATH, "//input[@type='text']"))).send_keys(self.__login)
         time.sleep(1)
         self.__browser.find_element(
-            By.NAME, "password").send_keys(self.__password + Keys.ENTER)
+            By.XPATH, "//input[@type='password']").send_keys(self.__password + Keys.ENTER)
         time.sleep(3)
-        self.__wait.until(EC.element_to_be_clickable(
-            (By.ID, "twofactorcode_entry"))).send_keys(self.__sa.get_code())
-        self.__browser.find_element(
-            By.ID, "twofactorcode_entry").send_keys(Keys.ENTER)
+        code = self.__wait.until(EC.element_to_be_clickable(
+            (By.XPATH, '//div[@class="newlogindialog_SegmentedCharacterInput_1kJ6q"]')))
+        code.find_element(By.TAG_NAME, "input").send_keys(self.__sa.get_code())
         time.sleep(1)
         if self.__wait.until(EC.presence_of_element_located(
                 (By.XPATH, '//a[@class="menuitem supernav username persona_name_text_content"]'))):
@@ -161,7 +159,7 @@ class SteamTradeBot():  # FIXME: Add dataclasses
 
     def create_buff_cookies(self):
         """Создание buff куки"""
-        with open("./steam_buff_login_link.txt.txt", encoding='utf-8') as file:
+        with open("./steam_buff_login_link.txt", encoding='utf-8') as file:
             self.__browser.get(file.read().strip())
         self.__wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//input[@class='btn_green_white_innerfade']"))).click()
@@ -200,12 +198,12 @@ class SteamTradeBot():  # FIXME: Add dataclasses
                 else:
                     steam = self.__buff_contenders[skin_name]
                 difference = (steam * 0.87) / \
-                    (buff['price'] * rubles_per_yuan)
+                             (buff['price'] * rubles_per_yuan)
                 self.__s = f"BUFF\n{skin_name}\n" + \
-                    f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
-                    f"Buff price: {buff['price']:.2f}¥" + \
-                    f" ({rubles_per_yuan * buff['price']:.2f}₽)\n" + \
-                    f"Difference is: +{difference:.2f}"
+                           f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
+                           f"Buff price: {buff['price']:.2f}¥" + \
+                           f" ({rubles_per_yuan * buff['price']:.2f}₽)\n" + \
+                           f"Difference is: +{difference:.2f}"
                 print(self.__s)
                 logger.debug("")
                 if difference > (100 + self.__percentage) / 100:
@@ -239,9 +237,9 @@ class SteamTradeBot():  # FIXME: Add dataclasses
                     tm_sell_price = tm_price_and_item_id[1]
                     difference = (steam * 0.87) / (tm_sell_price / 100)
                     self.__s = f"{skin_name}\n" + \
-                        f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
-                        f"TM price: {tm_sell_price / 100:.2f}\n" + \
-                        f"Difference is: +{difference:.2f}"
+                               f"Steam price: {steam:.2f}₽ ({steam * 0.87:.2f})₽\n" + \
+                               f"TM price: {tm_sell_price / 100:.2f}\n" + \
+                               f"Difference is: +{difference:.2f}"
                     print(self.__s)
                     logger.debug("")
                     if difference > (100 + self.__percentage) / 100:
@@ -254,7 +252,7 @@ class SteamTradeBot():  # FIXME: Add dataclasses
     def open_skinstable(self, market: str):
         """Открытие skins-table.xyz таблицы"""
         with open("./steam_skinstable_login_link.txt", encoding='utf-8') as file:
-            self.__browser.get(file.read().strip)
+            self.__browser.get(file.read().strip())
         self.__wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//input[@class='btn_green_white_innerfade']"))).click()
         for cookie in self.__main_cookies:
@@ -278,8 +276,8 @@ class SteamTradeBot():  # FIXME: Add dataclasses
     def tm_buy(self, item_id: str, price: str, trade_link=None) -> None:
         """Покупка TM скинов"""
         link = 'https://market.csgo.com/api/v2/buy?key=' + \
-            self.__tm_api_key + '&id=' + \
-            str(item_id) + '&price=' + str(price)
+               self.__tm_api_key + '&id=' + \
+               str(item_id) + '&price=' + str(price)
         if trade_link:
             link += trade_link
         logger.info(link)
@@ -293,6 +291,7 @@ class SteamTradeBot():  # FIXME: Add dataclasses
 
     def buff_buy(self, skin_id: int, price: float) -> None:
         """Покупка Buff163 скинов"""
+
         def get_headers(session, skin_id):
             """Header'ы для GET запросов"""
             headers = {
@@ -300,8 +299,8 @@ class SteamTradeBot():  # FIXME: Add dataclasses
                 'accept-encoding': 'gzip, deflate, br',
                 'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
                 'cookie':
-                    "; ".join([str(x)+"="+str(y)
-                              for x, y in session.cookies.get_dict().items()]),
+                    "; ".join([str(x) + "=" + str(y)
+                               for x, y in session.cookies.get_dict().items()]),
                 'host': 'buff.163.com',
                 'referer': f'https://buff.163.com/goods/{skin_id}?from=market',
                 'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
@@ -342,9 +341,7 @@ class SteamTradeBot():  # FIXME: Add dataclasses
             }
 
         current_order = get_current_order(skin_id, self.__session)
-        if float(current_order["price"]) > price:
-            self.__bot.send_message(self.__tg_id, self.__s)
-        elif float(current_order["price"]) / price > 1.05:
+        if float(current_order["price"]) / price > 1.05:
             return
         # BUY
         buy = 'https://buff.163.com/api/market/goods/buy'
@@ -367,7 +364,7 @@ class SteamTradeBot():  # FIXME: Add dataclasses
 
         # ASK_SELLER_TO_SEND_OFFER
         ask_seller_to_send_offer = 'https://buff.163.com/api/market/bill_order/' + \
-            'ask_seller_to_send_offer'
+                                   'ask_seller_to_send_offer'
         payload = {
             "bill_orders": [bill_order],
             "game": "csgo"
@@ -406,6 +403,8 @@ class SteamTradeBot():  # FIXME: Add dataclasses
                 with open("index.html", 'w', encoding='utf-8') as file:
                     file.write(skin_page.text)
                 continue
+            except:
+                continue
             item_nameid = last_script.rsplit(
                 '(', maxsplit=1)[-1].split(');')[0]
             try:
@@ -425,8 +424,8 @@ class SteamTradeBot():  # FIXME: Add dataclasses
 
     def get_market_sell_price_and_market_item_id(self, skin_name: str) -> list | None:
         """Получение самой дешевой цены и item_id скина на TM'е"""
-        url = 'https://market.csgo.com/api/v2/'\
-            f'search-item-by-hash-name-specific?key={self.__tm_api_key}&hash_name={skin_name}'
+        url = 'https://market.csgo.com/api/v2/' \
+              f'search-item-by-hash-name-specific?key={self.__tm_api_key}&hash_name={skin_name}'
         while True:
             try:
                 res = requests.get(url, timeout=10).json()
