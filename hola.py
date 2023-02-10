@@ -59,7 +59,7 @@ class Links:
 
 
 def get_buyed(chain) -> dict:
-    """Подсчет уже купленных скинов в инвентаре"""
+    """Подсчет уже купленных скинов в инвентаре (csv)"""
     b = dict()
     with open(f'{chain}.csv', newline='', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile, delimiter=';')
@@ -69,6 +69,34 @@ def get_buyed(chain) -> dict:
             else:
                 b[row['skin']] += 1
     return b
+
+
+def get_average(history) -> float | None:
+    """Фильтрация списка продаж
+    Args:
+        history (list): [время в unix, цена]
+    Returns:
+        float: средняя по продажам
+    """
+    one_week = 604800
+    if int(history[0][0]) > time.time() - one_week:
+        return
+    average = sum(el[1] for el in history) / len(history)
+    for i, el in enumerate(history):
+        price = el[1]
+        l_time = el[0]
+        if l_time < time.time() - one_week * 3 or price >= average * 2:
+            history.pop(i)
+    sell_in_2weeks = len(history)
+    if sell_in_2weeks > 30:
+        prices = [el[1] for el in history]
+        average = min(round(sum(prices) / len(prices), 2), (max(prices) + min(prices)) / 2)  # минимальная средняя
+        less_than_average = len([price for price in prices if price < average])
+        more_than_average = len([price for price in prices if price > average])
+        if less_than_average > more_than_average:
+            return
+        return average
+    return
 
 
 class SteamTradeBot:
@@ -192,140 +220,93 @@ class SteamTradeBot:
         self.rubles_per_yuan = round(response.json()['data']['buff_price_currency_rate_base_cny'], 2)
         logger.info(f"1 rub = {self.rubles_per_yuan} yuan")
 
-    def filter(self, name, history, average_sell_history, chain, buyed=None):
-        """Фильтрация списка продаж для buff2tm или tm2buff"""
-        x = []
-        y = []
-        if int(history[0][0]) > time.time() - 604800:
-            print(name)
-            return
-        for el in history:
-            price = int(el[1]) / 100 if chain == 'buff2tm' else el[1]
-            l_time = int(el[0])
-            if l_time > time.time() - 604800 * 3 and price < average_sell_history * 2:
-                x.append(l_time)
-                y.append(price)
-
-        sell_in_2weeks = len(y)
-        if sell_in_2weeks > 30:
-            sr = min(round(sum(y) / len(y), 2), round((max(y) + min(y)) / 2, 2))
-
-            less_than_average = len([price for price in y if price < sr])
-            more_than_average = len([price for price in y if price > sr])
-            if less_than_average > more_than_average:
-                return
-
-            self.__s = chain.upper() + "\n" + f"Skin: {name}\n"
-            if chain == 'buff2tm':
-                sell_price = round(sr * 0.95, 2)
-                buy_price = self.get_buff_sell_price_and_skin_id(name)
-                difference = round(sell_price / (buy_price['price'] * self.rubles_per_yuan), 3)
-                self.__s += f"Buff price: {round(buy_price['price'] * self.rubles_per_yuan, 2)}\n" + \
-                            f"TM SR price: {sell_price} ({sr})\n" + \
-                            f"Difference: +{difference}"
-            elif chain == 'tm2buff':
-                sell_price = round(sr * 0.975, 2)
-                buy_price = self.get_market_sell_price_and_market_item_id(name)
-                difference = round(buy_price['price'] / sell_price, 3)
-                self.__s += f"Buff SR price: {sell_price} ({sr})\n" + \
-                            f"TM price: {buy_price['price']}\n" + \
-                            f"Difference: -{difference}"
-            print(self.__s)
-            logger.debug("")
-            if (chain == 'buff2tm' and difference >= (100 + self.__percentage) / 100) or (
-                    chain == 'tm2buff' and difference <= (100 + self.__percentage) / 100):
-                if chain == 'buff2tm':
-                    buy = self.buff_buy(buy_price['skin_id'], buy_price['price'] * self.rubles_per_yuan)
-                    buy_price = buy['price'] * self.rubles_per_yuan
-                    self.__s += f'\n{buy["msg"]}'
-                elif chain == 'tm2buff':
-                    # buy = self.tm_buy(buy_price['skin_id'], buy_price['price'] * 100)
-                    buy = True
-                    buy_price = buy_price['price']
-                if buy:
-                    logger.success("BUY!!!")
-                    self.__bot.send_message(self.__tg_id, self.__s)
-                    buyed[name] = 1 if name not in buyed else buyed[name] + 1
-                    with open(f"{chain}.csv", 'a', newline='', encoding='utf-8') as csvfile:
-                        fieldnames = ['date', 'skin', 'buy_price', 'sell_price']
-                        dictwriter_object = DictWriter(csvfile, fieldnames=fieldnames, delimiter=';')
-                        dictwriter_object.writerow({
-                            "date": datetime.now().strftime("%d.%m.%Y"),
-                            "skin": name,
-                            "buy_price": round(buy_price, 2),
-                            "sell_price": sell_price})
-
     def start_buff_2_tm(self):
-        """Buff2TM"""
+        """BUFF2TM"""
 
-        def get_items():
+        def get_minclass_item():
             while True:
                 r = requests.get(
-                    f"https://market.csgo.com/api/v2/search-item-by-hash-name?key={self.__tm_api_key}&hash_name={name}")
-                try:
-                    return r.json()['data']
-                except JSONDecodeError:
-                    logger.error(r.reason)
-                    if r.status_code == 503:
-                        time.sleep(10)
-                    else:
-                        sys.exit(-1)
-
-        def get_item():
-            while True:
-                try:
-                    r = requests.get(
-                        f"https://market.csgo.com/api/v2/search-item-by-hash-name?key="
-                        f"{self.__tm_api_key}&hash_name={name}")
+                    f"https://market.csgo.com/api/v2/search-item-by-hash-name?key="
+                    f"{self.__tm_api_key}&hash_name={name}")
+                if r.ok:
                     return min(r.json()['data'], key=lambda x: x["class"])
-                except ValueError as e_:
-                    logger.error(e_)
+                else:
                     print(name)
-                    sys.exit(-1)
+                    logger.error(r.reason)
+                    breakpoint()
 
         def get_history() -> dict:
             while True:
-                r = requests.get(f"https://market.csgo.com/api/ItemHistory/"
-                                 f"{item['class']}_{item['instance']}/?key={self.__tm_api_key}")
+                response = requests.get(f"https://market.csgo.com/api/ItemHistory/"
+                                        f"{item['class']}_{item['instance']}/?key={self.__tm_api_key}")
                 try:
-                    return r.json()
+                    r = response.json()
+                    r.pop('success')
+                    r.pop('max')
+                    r.pop('min')
+                    return r
                 except JSONDecodeError:
-                    logger.error(r.reason)
-                    if r.status_code == 503:
+                    logger.error(response.reason)
+                    if response.status_code == 503:
                         time.sleep(10)
                     else:
                         sys.exit(-1)
+                except Exception as e:
+                    logger.error(e)
+                    breakpoint()
 
         buyed = get_buyed('buff2tm')
         self.buff_login()
         while True:
             skins = self.get_skins_from_tablevv('buff2tm')
             for name in skins:
-                if name in buyed and buyed[name] >= 3:
+                if name in buyed:
+                    if buyed[name] >= 3:
+                        continue
+                item = get_minclass_item()
+                if not item:
                     continue
-                items = get_items()
-                while True:
-                    item = get_item()
-                    sell_history = get_history()
-                    try:
-                        average_sell_history = int(sell_history['average']) / 100
-                        break
-                    except KeyError as e:
-                        print(e)
-                        print(f'https://market.csgo.com/item/{item["class"]}-{item["instance"]}-{name}')
-                        items.remove(item)
-                        if not items:
-                            break
-                if not items:
-                    continue
+                sell_history = get_history()
                 history = [[int(el['l_time']), float(el['l_price']) / 100] for el in sell_history['history']]
                 history.reverse()
-                self.filter(name, history, average_sell_history, 'buff2tm', buyed)
+                average = get_average(history)
+                if not average:
+                    continue
+                sell_price = round(average * 0.95, 2)
+                buy_price = self.get_buff_id_and_price(name)
+                difference = round(sell_price / (buy_price['price'] * self.rubles_per_yuan), 3)
+                self.__s += "BUFF2TM" + "\n" + f"Skin: {name}\n" + \
+                            f"Buff price: {round(buy_price['price'] * self.rubles_per_yuan, 2)}\n" + \
+                            f"TM average price: {sell_price} ({average})\n" + \
+                            f"Difference: +{difference}"
+                print(self.__s)
+                logger.debug("")
+                if difference >= (100 + self.__percentage) / 100:
+                    buy = self.buff_buy(buy_price['skin_id'], buy_price['price'] * self.rubles_per_yuan)
+                    buy_price = buy['price'] * self.rubles_per_yuan
+                    if buy:
+                        logger.success("BUY!!!")
+                        self.__s += f'\n{buy["msg"]}'
+                        self.__bot.send_message(self.__tg_id, self.__s)
+                        buyed[name] = 1 if name not in buyed else buyed[name] + 1
+                        with open(f"buff2tm.csv", 'a', newline='', encoding='utf-8') as csvfile:
+                            fieldnames = ['date', 'skin', 'buy_price', 'sell_price']
+                            dictwriter_object = DictWriter(csvfile, fieldnames=fieldnames, delimiter=';')
+                            dictwriter_object.writerow({
+                                "date": datetime.now().strftime("%d.%m.%Y"),
+                                "skin": name,
+                                "buy_price": round(buy_price, 2),
+                                "sell_price": sell_price})
+                self.__s = ''
 
     def start_tm_2_buff(self):
         """TM2BUFF"""
 
-        def get_history():
+        def get_history() -> list:
+            """Получение истории продажи скина за месяц
+            Returns:
+                list: [время в unix в миллисекундах, цена]
+            """
             payload = {
                 'game': 'csgo',
                 'goods_id': buff['skin_id'],
@@ -336,15 +317,34 @@ class SteamTradeBot:
             r = self.__session.get(f'https://buff.163.com/api/market/goods/price_history/buff', json=payload)
             return r.json()['data']['price_history']
 
-        buyed = get_buyed('tm2buff')
+        averages = pickle.load(open('./averages', 'rb'))
         self.buff_login()
         while True:
             skins = self.get_skins_from_tablevv('tm2buff')
             for name in skins:
-                buff = self.get_buff_sell_price_and_skin_id(name)
-                history = list(map(lambda x: [x[0] // 1000, x[1]], get_history()))
-                average_sell_history = sum([el[1] for el in history]) / len(history)
-                self.filter(name, history, average_sell_history, 'tm2buff', buyed)
+                if name in averages:
+                    average = averages[name]['average']
+                else:
+                    buff = self.get_buff_id_and_price(name)
+                    history = list(map(lambda x: [x[0] // 1000, x[1]],
+                                       get_history()))
+                    average = get_average(history)
+                    averages[name] = {'average': average, 'time': time.asctime()}
+                if not average:
+                    continue
+                sell_price = round(average * 0.975, 2)
+                buy_price = self.get_market_sell_price_and_market_item_id(name)
+                difference = round(buy_price['price'] / sell_price, 3)
+                self.__s += "TM2BUFF\n" + f"Skin: {name}\n" + \
+                            f"Buff average price: {sell_price} ({average})\n" + \
+                            f"TM price: {buy_price['price']}\n" + \
+                            f"Difference: -{difference}"
+                print(self.__s)
+                logger.debug("")
+                if difference <= (100 + self.__percentage) / 100:
+                    logger.success("BUY!!!")
+                    self.__bot.send_message(self.__tg_id, self.__s)
+                self.__s = ''
 
     def start_buff_2_steam(self):
         """BUFF2STEAM"""
@@ -354,7 +354,7 @@ class SteamTradeBot:
         while True:
             skins = self.get_skins_from_skinstable()
             for skin_name in skins:
-                buff = self.get_buff_sell_price_and_skin_id(skin_name)
+                buff = self.get_buff_id_and_price(skin_name)
                 if skin_name not in self.__buff_contenders:
                     steam = self.get_steam_auto_buy_price(skin_name)
                     self.__buff_contenders[skin_name] = steam
@@ -463,20 +463,13 @@ class SteamTradeBot:
             }
         else:
             payload = {
-                "filter": {
-                    "appId": 730, "order": 3, "minSales": 100, "service1": 9, "service2": 17, "countMin1": 1,
-                    "countMin2": 0,
-                    "direction": 1, "priceMax1": 0, "priceMax2": 0, "priceMin1": 5, "priceMin2": 0, "profitMax": 102,
-                    "profitMin": 0, "priceType1": 0, "priceType2": 0, "salesPeriod": 0, "salesService": 17,
-                    "searchName": "",
-                    "types":
-                        {"1": 1, "2": 0, "3": 0, "4": 0, "5": 0, "6": 1,
-                         "7": 0, "8": 0, "9": 0, "10": 0, "11": 1}
-                },
-                "fee1": {"fee": 2.5, "bonus": 0},
-                "fee2": {"fee": 5, "bonus": 0},
-                "currency": "USD"
-            }
+                "filter": {"appId": 730, "order": 3, "minSales": 100, "service1": 9, "service2": 17, "countMin1": 1,
+                           "countMin2": 0, "direction": 1, "priceMax1": 0, "priceMax2": 0, "priceMin1": 5,
+                           "priceMin2": 0, "profitMax": 102, "profitMin": 0, "priceType1": 0, "priceType2": 0,
+                           "salesPeriod": 0, "salesService": 17, "searchName": "",
+                           "types": {"1": 1, "2": 0, "3": 0, "4": 0, "5": 0, "6": 1, "7": 0, "8": 0, "9": 0, "10": 0,
+                                     "11": 1}}, "fee1": {"fee": 2.5, "bonus": 0}, "fee2": {"fee": 5, "bonus": 0},
+                "currency": "USD"}
         response = requests.post(link, headers=headers, json=payload, params={"page": 1}, verify=False)
 
         if response.ok:
@@ -649,8 +642,13 @@ class SteamTradeBot:
         # Ошибка маркета
         return [res['success'], res['error']]
 
-    def get_buff_sell_price_and_skin_id(self, skin_name) -> dict:
-        """Получение самой дешевой цены и skin_id скина на Buff163'е"""
+    def get_buff_id_and_price(self, skin_name) -> dict:
+        """Получение id скина и текущей цены продажи на Buff163
+        Args:
+            skin_name (str): Название скина
+        Returns:
+            dict: id, price
+        """
         page_num = 1
         while True:
             url = f'https://buff.163.com/api/market/goods?game=csgo&page_num={page_num}&search=' + skin_name
@@ -664,13 +662,9 @@ class SteamTradeBot:
                 pprint(response.content)
                 time.sleep(5)
                 continue
-            skin = {}
-            items = result['data']['items']
-            for item in items:
-                if item['market_hash_name'] == skin_name:
-                    skin = item
-                    break
+            skin = [item for item in result['data']['items'] if item['market_hash_name'] == skin_name]
             if skin:
+                skin = skin[0]
                 return {"skin_id": skin['id'], "price": float(skin['sell_min_price'])}
             page_num += 1
 
