@@ -344,7 +344,11 @@ class SteamTradeBot:
             r = self.__session.get(f'https://buff.163.com/api/market/goods/price_history/buff', json=payload)
             return r.json()['data']['price_history']
 
-        averages = pickle.load(open('./averages', 'rb'))
+        try:
+            averages = pickle.load(open('./averages', 'rb'))
+        except FileNotFoundError:
+            averages = dict()
+            pickle.dump(averages, open('./averages', 'wb'))
         self.buff_prep()
         while True:
             skins = self.get_skins_from_tablevv('tm2buff')
